@@ -41,6 +41,7 @@ function run_maven_exec() {
 
 # ${RETRIES} number of times will try to curl to /health endpoint to passed port $1 and host $2
 function curl_health_endpoint() {
+    local 
     local PASSED_HOST="${2:-$HEALTH_HOST}"
     local READY_FOR_TESTS=1
     for i in $( seq 1 "${RETRIES}" ); do
@@ -104,6 +105,7 @@ mvn clean install
 
 echo -e "\n\nRunning the collector\n\n"
 java_jar "stackdriver-zipkin-collector" "./collector/target/collector*.jar" "GOOGLE_APPLICATION_CREDENTIALS=${ROOT}/credentials.json PROJECT_ID=zipkin-demo"
+
 
 echo -e "\n\nCloning the Sleuth Web MVC example"
 cd "${ROOT}/target"
