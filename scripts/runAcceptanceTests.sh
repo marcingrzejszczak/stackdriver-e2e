@@ -15,7 +15,7 @@ function java_jar() {
     local APP_NAME=$1
     local APP_JAVA_PATH=$2
     local ENV_VARS=$3
-    local EXPRESSION="nohup ${ENV_VARS} ${JAVA_PATH_TO_BIN}java $2 -jar $APP_JAVA_PATH >${LOGS_DIR}/${APP_NAME}.log &"
+    local EXPRESSION="${ENV_VARS} nohup ${JAVA_PATH_TO_BIN}java $2 -jar $APP_JAVA_PATH >${LOGS_DIR}/${APP_NAME}.log &"
     echo -e "\nTrying to run [$EXPRESSION]"
     eval ${EXPRESSION}
     pid=$!
@@ -41,12 +41,12 @@ function run_maven_exec() {
 
 # ${RETRIES} number of times will try to curl to /health endpoint to passed port $1 and host $2
 function curl_health_endpoint() {
-    local 
+    local PORT=$1
     local PASSED_HOST="${2:-$HEALTH_HOST}"
     local READY_FOR_TESTS=1
     for i in $( seq 1 "${RETRIES}" ); do
         sleep "${WAIT_TIME}"
-        curl -m 5 "${PASSED_HOST}:$1/health" && READY_FOR_TESTS=0 && break
+        curl -m 5 "${PASSED_HOST}:${PORT}}/health" && READY_FOR_TESTS=0 && break
         echo "Fail #$i/${RETRIES}... will try again in [${WAIT_TIME}] seconds"
     done
     return ${READY_FOR_TESTS}
@@ -80,9 +80,13 @@ We will do the following steps to achieve this:
 01) Clone stackdriver-zipkin repo (it's not yet available in central)
 02) Build that jar with the version locally
 03) Run the stackdriver collector
-04) Run 2 Sleuth apps (client, server)
-05) Hit the frontend twice (GET http://localhost:8081)
-06) See the results in the collector
+04) Wait for it to start
+05) Run Sleuth client
+06) Wait for it to start
+07) Run Sleuth server
+08) Wait for it to start
+09) Hit the frontend twice (GET http://localhost:8081)
+10) See the results in the collector
 
 _______ _________ _______  _______ _________
 (  ____ \\__   __/(  ___  )(  ____ )\__   __/
@@ -101,11 +105,11 @@ cd "${ROOT}/target/stackdriver-zipkin"
 
 echo -e "\n\nBuilding version [${STACKDRIVER_VERSION}]\n\n"
 git checkout ${STACKDRIVER_VERSION}
-mvn clean install
+mvn clean install -DskipTests
 
 echo -e "\n\nRunning the collector\n\n"
 java_jar "stackdriver-zipkin-collector" "./collector/target/collector*.jar" "GOOGLE_APPLICATION_CREDENTIALS=${ROOT}/credentials.json PROJECT_ID=zipkin-demo"
-
+curl_local_health_endpoint 8080
 
 echo -e "\n\nCloning the Sleuth Web MVC example"
 cd "${ROOT}/target"
@@ -113,4 +117,6 @@ git clone https://github.com/openzipkin/sleuth-webmvc-example
 cd "${ROOT}/target/sleuth-webmvc-example"
 echo -e "\n\nRunning apps\n\n"
 run_maven_exec "Frontend"
+curl_local_health_endpoint 8081
 run_maven_exec "Backend"
+curl_local_health_endpoint 9000
