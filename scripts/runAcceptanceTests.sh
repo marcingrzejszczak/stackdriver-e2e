@@ -9,13 +9,16 @@
 set -e
 
 # FUNCTIONS
+function build_the_app() {
+  mvn clean install
+}
 
 # Runs the `java -jar` for given application $1 jars $2 and env vars $3
 function java_jar() {
     local APP_NAME=$1
     local APP_JAVA_PATH=$2
     local ENV_VARS=$3
-    local EXPRESSION="${ENV_VARS} nohup ${JAVA_PATH_TO_BIN}java $2 -jar $APP_JAVA_PATH >${LOGS_DIR}/${APP_NAME}.log &"
+    local EXPRESSION="${ENV_VARS} nohup ${JAVA_PATH_TO_BIN}java -jar $2 $APP_JAVA_PATH >${LOGS_DIR}/${APP_NAME}.log &"
     echo -e "\nTrying to run [$EXPRESSION]"
     eval ${EXPRESSION}
     pid=$!
@@ -46,15 +49,28 @@ function curl_health_endpoint() {
     local READY_FOR_TESTS=1
     for i in $( seq 1 "${RETRIES}" ); do
         sleep "${WAIT_TIME}"
-        curl -m 5 "${PASSED_HOST}:${PORT}}/health" && READY_FOR_TESTS=0 && break
+        curl -m 5 "${PASSED_HOST}:${PORT}/health" && READY_FOR_TESTS=0 && break
         echo "Fail #$i/${RETRIES}... will try again in [${WAIT_TIME}] seconds"
     done
+    if [[ "${READY_FOR_TESTS}" == 1 ]] ; then
+        echo "Failed to start the app..."
+        kill_all
+    fi
     return ${READY_FOR_TESTS}
 }
 
 # ${RETRIES} number of times will try to curl to /health endpoint to passed port $1 and localhost
 function curl_local_health_endpoint() {
     curl_health_endpoint $1 "127.0.0.1"
+}
+
+function send_a_test_request() {
+    curl -m 5 "127.0.0.1:8081" && curl -m 5 "127.0.0.1:8081" && echo -e "\n\nSuccessfully sent two test requests!!!"
+}
+
+# kills all apps
+function kill_all() {
+    ${ROOT}/scripts/kill.sh
 }
 
 # VARIABLES
@@ -80,11 +96,11 @@ We will do the following steps to achieve this:
 01) Clone stackdriver-zipkin repo (it's not yet available in central)
 02) Build that jar with the version locally
 03) Run the stackdriver collector
-04) Wait for it to start
+04) Wait for it to start (port 9411)
 05) Run Sleuth client
-06) Wait for it to start
+06) Wait for it to start (port 8081)
 07) Run Sleuth server
-08) Wait for it to start
+08) Wait for it to start (port 9000)
 09) Hit the frontend twice (GET http://localhost:8081)
 10) See the results in the collector
 
@@ -99,8 +115,11 @@ _______ _________ _______  _______ _________
 EOF
 cd "${ROOT}/target"
 
-echo -e "\n\nCloning stackdriver zipkin\n\n"
-git clone https://github.com/GoogleCloudPlatform/stackdriver-zipkin
+if [[ ! -e "${ROOT}/target/stackdriver-zipkin/.git" ]]; then
+  echo -e "\n\nCloning stackdriver zipkin\n\n"
+  git clone https://github.com/GoogleCloudPlatform/stackdriver-zipkin
+fi
+
 cd "${ROOT}/target/stackdriver-zipkin"
 
 echo -e "\n\nBuilding version [${STACKDRIVER_VERSION}]\n\n"
@@ -109,14 +128,16 @@ mvn clean install -DskipTests
 
 echo -e "\n\nRunning the collector\n\n"
 java_jar "stackdriver-zipkin-collector" "./collector/target/collector*.jar" "GOOGLE_APPLICATION_CREDENTIALS=${ROOT}/credentials.json PROJECT_ID=zipkin-demo"
-curl_local_health_endpoint 8080
+curl_local_health_endpoint 9411
 
 echo -e "\n\nCloning the Sleuth Web MVC example"
 cd "${ROOT}/target"
 git clone https://github.com/openzipkin/sleuth-webmvc-example
 cd "${ROOT}/target/sleuth-webmvc-example"
 echo -e "\n\nRunning apps\n\n"
+build_the_app
 run_maven_exec "Frontend"
 curl_local_health_endpoint 8081
 run_maven_exec "Backend"
 curl_local_health_endpoint 9000
+send_a_test_request
