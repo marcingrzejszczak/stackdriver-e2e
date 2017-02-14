@@ -3,9 +3,6 @@
 # requires:
 # git, maven
 
-(git --help > /dev/null 2>&1 && echo "Git installed") || (echo "No git detected :(" && exit 1)
-(mvn --help > /dev/null 2>&1 && echo "Maven installed") || (echo "No maven detected :(" && exit 1)
-
 set -e
 
 # FUNCTIONS
